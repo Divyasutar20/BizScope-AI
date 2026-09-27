@@ -15,7 +15,10 @@ const CANDIDATE_CATEGORIES = [
   'electronics', 'stationery', 'mobile_phone', 'jewelry', 'hotel',
 ];
 
-// Business types that generate demand for each category, based on real nearby data
+const TAG_ALIASES = {
+  jewelry: ['jewelry', 'jewellery'],
+};
+
 const COMPLEMENTARY_MAP = {
   cafe: ['school', 'college', 'university', 'library', 'office'],
   restaurant: ['cinema', 'hotel', 'theatre', 'college'],
@@ -36,14 +39,17 @@ const COMPLEMENTARY_MAP = {
 };
 
 function buildAnalysis(places, category) {
-  const competitorPlaces = places.filter((p) => p.type.toLowerCase() === category.toLowerCase());
-  const otherPlaces = places.filter((p) => p.type.toLowerCase() !== category.toLowerCase());
+  const key = category.toLowerCase();
+  const acceptedTags = TAG_ALIASES[key] || [key];
+
+  const competitorPlaces = places.filter((p) => acceptedTags.includes(p.type.toLowerCase()));
+  const otherPlaces = places.filter((p) => !acceptedTags.includes(p.type.toLowerCase()));
   const directCompetitors = competitorPlaces.length;
   const totalNearbyPlaces = places.length;
   const competitionLevel =
     directCompetitors === 0 ? 'low' : directCompetitors <= 2 ? 'moderate' : 'high';
 
-  const complementaryTags = COMPLEMENTARY_MAP[category.toLowerCase()] || [];
+  const complementaryTags = COMPLEMENTARY_MAP[key] || [];
   const complementaryCount = places.filter((p) =>
     complementaryTags.includes(p.type.toLowerCase())
   ).length;
@@ -100,13 +106,17 @@ router.post('/nearby', async (req, res) => {
         }
       );
 
-      const places = response.data.elements.map((el) => ({
-        id: el.id,
-        lat: el.lat,
-        lng: el.lon,
-        name: el.tags?.name || 'Unnamed',
-        type: el.tags?.shop || el.tags?.amenity || el.tags?.leisure || el.tags?.tourism || 'unknown',
-      }));
+      const places = response.data.elements.map((el) => {
+        const rawType = el.tags?.shop || el.tags?.amenity || el.tags?.leisure || el.tags?.tourism || 'unknown';
+        const cleanType = rawType.split(';')[0].trim().toLowerCase();
+        return {
+          id: el.id,
+          lat: el.lat,
+          lng: el.lon,
+          name: el.tags?.name || 'Unnamed',
+          type: cleanType,
+        };
+      });
 
       const selectedCategory = businessCategory || CANDIDATE_CATEGORIES[0];
       const { competitorPlaces, otherPlaces, analysis } = buildAnalysis(places, selectedCategory);
@@ -150,6 +160,32 @@ router.post('/nearby', async (req, res) => {
     message: 'All Overpass mirrors failed',
     error: lastError?.message,
   });
+});
+
+router.get('/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q) {
+    return res.status(400).json({ message: 'q is required' });
+  }
+
+  try {
+    const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+      params: { q, format: 'json', limit: 5, countrycodes: 'in' },
+      headers: { 'User-Agent': 'BizScopeAI/1.0 (student project)' },
+      timeout: 10000,
+    });
+
+    const results = response.data.map((r) => ({
+      displayName: r.display_name,
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+    }));
+
+    res.json({ results });
+  } catch (err) {
+    console.error('Geocoding failed:', err.message);
+    res.status(500).json({ message: 'Geocoding failed', error: err.message });
+  }
 });
 
 module.exports = router;

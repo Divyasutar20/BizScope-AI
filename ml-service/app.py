@@ -57,4 +57,4 @@ def home():
     return "BizScope AI ML service is running"
 
 if __name__ == '__main__':
-    app.run(port=5001, debug=True)
+    app.run(port=5001, debug=True, threaded=True)
