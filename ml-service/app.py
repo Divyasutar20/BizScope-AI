@@ -4,34 +4,36 @@ app = Flask(__name__)
 
 def calculate_success_score(data):
     """
-    Simple rule-based scoring model.
-    Takes analysis data (competition, category counts, total nearby places)
-    and returns a Business Success Score out of 100.
-    Replace this with a trained ML model later.
+    Rule-based scoring model.
+    Uses nearby place density, direct competition, and complementary
+    businesses (demand signals) to score a location for a business type.
     """
     total_nearby = data.get('totalNearbyPlaces', 0)
     direct_competitors = data.get('directCompetitors', 0)
     competition_level = data.get('competitionLevel', 'unknown')
+    complementary_count = data.get('complementaryCount', 0)
 
     score = 50  # baseline
 
-    # More foot-traffic-generating places nearby = more potential customers
+    # General foot traffic from area density
     if total_nearby > 20:
-        score += 15
-    elif total_nearby > 10:
         score += 10
+    elif total_nearby > 10:
+        score += 6
     elif total_nearby > 0:
-        score += 5
+        score += 3
 
     # Competition penalty/bonus
     if competition_level == 'low':
-        score += 20
+        score += 15
     elif competition_level == 'moderate':
-        score += 5
+        score += 3
     elif competition_level == 'high':
         score -= 15
 
-    # Clamp between 0 and 100
+    # Demand bonus: complementary businesses nearby suggest real customer demand
+    score += min(20, complementary_count * 4)
+
     score = max(0, min(100, score))
 
     return {
@@ -40,6 +42,7 @@ def calculate_success_score(data):
             "total_nearby_places": total_nearby,
             "direct_competitors": direct_competitors,
             "competition_level": competition_level,
+            "complementary_count": complementary_count,
         }
     }
 
